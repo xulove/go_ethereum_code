@@ -40,14 +40,14 @@ import (
 )
 
 const (
-	alpha           = 3  // Kademlia concurrency factor
-	bucketSize      = 16 // Kademlia bucket size
+	alpha           = 3  // Kademlia桶并发参数,是系统内一个优化参数,控制每次从K桶最多取出节点个数,ethereum取值3
+	bucketSize      = 16 // Kademlia桶的大小，可容纳的节点数量,,ethereum取16
 	maxReplacements = 10 // Size of per-bucket replacement list
 
 	// We keep buckets for the upper 1/15 of distances because
 	// it's very unlikely we'll ever encounter a node that's closer.
-	hashBits          = len(common.Hash{}) * 8
-	nBuckets          = hashBits / 15       // Number of buckets
+	hashBits          = len(common.Hash{}) * 8 //每个节点ID长度,32*8=256, 32位16进制,节点长度256位
+	nBuckets          = hashBits / 15       //K桶个数,目前取257
 	bucketMinDistance = hashBits - nBuckets // Log distance of closest bucket
 
 	// IP address limits.

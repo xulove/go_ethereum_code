@@ -57,11 +57,15 @@ const (
 )
 
 // RPC packet types
+//以太坊Kad网总共定义了4种消息类型:
+//ping和pong是一对操作,用于检测节点活性,节点收到ping消息后立即回复pong响应:
 const (
-	pingPacket = iota + 1 // zero is 'reserved'
-	pongPacket
-	findnodePacket
-	neighborsPacket
+	pingPacket = iota + 1 // zero is 'reserved', ping操作
+	pongPacket            //pong操作
+
+
+	findnodePacket   //节点查询
+	neighborsPacket  //邻居回应
 )
 
 // RPC request structures
@@ -578,10 +582,13 @@ func decodePacket(buf []byte) (packet, NodeID, []byte, error) {
 	return req, fromID, hash, err
 }
 
+// 收到ping消息的响应函数
+
 func (req *ping) handle(t *udp, from *net.UDPAddr, fromID NodeID, mac []byte) error {
 	if expired(req.Expiration) {
 		return errExpired
 	}
+	// 向ping消息发送方回复pong
 	t.send(from, pongPacket, &pong{
 		To:         makeEndpoint(from, req.From.TCP),
 		ReplyTok:   mac,
@@ -589,6 +596,7 @@ func (req *ping) handle(t *udp, from *net.UDPAddr, fromID NodeID, mac []byte) er
 	})
 	if !t.handleReply(fromID, pingPacket, req) {
 		// Note: we're ignoring the provided IP address right now
+		// 成功完成一次ping-pong,更新K桶节点信息
 		go t.bond(true, fromID, from, req.From.TCP)
 	}
 	return nil
@@ -607,6 +615,8 @@ func (req *pong) handle(t *udp, from *net.UDPAddr, fromID NodeID, mac []byte) er
 }
 
 func (req *pong) name() string { return "PONG/v4" }
+//findnode和neighbors是一对操作.
+//findnode用于查找与某节点相距最近的节点,查找到后以neighbors类型消息回复查找发起者
 
 func (req *findnode) handle(t *udp, from *net.UDPAddr, fromID NodeID, mac []byte) error {
 	if expired(req.Expiration) {
@@ -624,6 +634,7 @@ func (req *findnode) handle(t *udp, from *net.UDPAddr, fromID NodeID, mac []byte
 	}
 	target := crypto.Keccak256Hash(req.Target[:])
 	t.mutex.Lock()
+	// 从本节点路由表里查找于target节点相距最近的bucketSize的节点
 	closest := t.closest(target, bucketSize).entries
 	t.mutex.Unlock()
 
@@ -631,6 +642,7 @@ func (req *findnode) handle(t *udp, from *net.UDPAddr, fromID NodeID, mac []byte
 	var sent bool
 	// Send neighbors in chunks with at most maxNeighbors per packet
 	// to stay below the 1280 byte limit.
+	// 回复查询发起方
 	for _, n := range closest {
 		if netutil.CheckRelayIP(from.IP, n.IP) == nil {
 			p.Nodes = append(p.Nodes, nodeToRPC(n))
