@@ -347,6 +347,7 @@ func recoverNodeID(hash, sig []byte) (id NodeID, err error) {
 // distcmp compares the distances a->target and b->target.
 // Returns -1 if a is closer to target, 1 if b is closer to target
 // and 0 if they are equal.
+// 就是比较a，b两个hash和target这个hash之间的距离
 func distcmp(target, a, b common.Hash) int {
 	for i := range target {
 		da := a[i] ^ target[i]
@@ -411,7 +412,7 @@ func logdist(a, b common.Hash) int {
 	return len(a)*8 - lz
 }
 
-// hashAtDistance returns a random hash such that logdist(a, b) == n
+// hashAtDistance： returns a random hash such that logdist(a, b) == n
 func hashAtDistance(a common.Hash, n int) (b common.Hash) {
 	if n == 0 {
 		return a

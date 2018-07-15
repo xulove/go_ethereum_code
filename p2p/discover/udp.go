@@ -177,6 +177,7 @@ type udp struct {
 }
 
 // pending represents a pending reply.
+// pending实现了一种延迟处理逻辑
 //
 // some implementations of the protocol wish to send more than one
 // reply packet to findnode. in general, any neighbors packet cannot
@@ -185,18 +186,27 @@ type udp struct {
 // our implementation handles this by storing a callback function for
 // each pending reply. incoming packets from a node are dispatched
 // to all the callback functions for that node.
+// 它主要有两个作用:
+// 1. 提供回调机制,当某一个操作发起异步请求时,就使用pending结构封装一个闭包,
+// 当收到异步回复后从pending列表取出这个闭包,执行回调,因此在这个回调里可以完成数据包校验等后处理
+// 如findnode操作将更新k桶的操作暂存,再获取到异步回复后执行这个闭包完成k桶更新
+// 2. 提供多个回复接收功能,一个RPC请求可能会对应多个回复包,
+// 比如findnode对应多个neigbours回复包,此时可以提供多个pending进行逐个包校验
 type pending struct {
 	// these fields must match in the reply.
+	// 来源节点
 	from  NodeID
 	ptype byte
 
 	// time when the request must complete
+	// 调用超时丢弃pending结构
 	deadline time.Time
 
 	// callback is called when a matching reply arrives. if it returns
 	// true, the callback is removed from the pending reply queue.
 	// if it returns false, the reply is considered incomplete and
 	// the callback will be invoked again for the next matching reply.
+	// 回调函数,简单而强大
 	callback func(resp interface{}) (done bool)
 
 	// errc receives nil when the callback indicates completion or an

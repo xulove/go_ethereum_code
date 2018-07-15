@@ -279,6 +279,7 @@ func (tab *Table) Lookup(targetID NodeID) []*Node {
 	return tab.lookup(targetID, true)
 }
 
+
 func (tab *Table) lookup(targetID NodeID, refreshIfEmpty bool) []*Node {
 	var (
 		target         = crypto.Keccak256Hash(targetID[:])
@@ -295,6 +296,7 @@ func (tab *Table) lookup(targetID NodeID, refreshIfEmpty bool) []*Node {
 	for {
 		tab.mutex.Lock()
 		// generate initial result set
+		//找到离目标节点target距离最近的一批节点
 		result = tab.closest(target, bucketSize)
 		tab.mutex.Unlock()
 		if len(result.entries) > 0 || !refreshIfEmpty {
@@ -360,6 +362,9 @@ func (tab *Table) refresh() <-chan struct{} {
 }
 
 // loop schedules refresh, revalidate runs and coordinates shutdown.
+//loop()和readLoop()
+//这两个循环流程放在一起说,它们主要是一个工程实现,将异步调用代码通过channel串接成同步。
+//业务上主要是负责处理ping,pong,findnode,neighbors四个消息类型的收发。
 func (tab *Table) loop() {
 	var (
 		revalidate     = time.NewTimer(tab.nextRevalidateTime())
@@ -423,6 +428,7 @@ loop:
 // doRefresh performs a lookup for a random target to keep buckets
 // full. seed nodes are inserted if the table is empty (initial
 // bootstrap or discarded faulty peers).
+// 刷新K桶的核心逻辑
 func (tab *Table) doRefresh(done chan struct{}) {
 	defer close(done)
 
@@ -432,6 +438,7 @@ func (tab *Table) doRefresh(done chan struct{}) {
 	tab.loadSeedNodes(true)
 
 	// Run self lookup to discover new neighbor nodes.
+	// 以自身作为目标节点,刷新K桶
 	tab.lookup(tab.self.ID, false)
 
 	// The Kademlia paper specifies that the bucket refresh should
@@ -440,14 +447,17 @@ func (tab *Table) doRefresh(done chan struct{}) {
 	// (not hash-sized) and it is not easily possible to generate a
 	// sha3 preimage that falls into a chosen bucket.
 	// We perform a few lookups with a random target instead.
+	// 和标准Kademlia协议选取最旧的K桶进行刷新不同，以太坊选取一个随机节点ID作为刷新基点
 	for i := 0; i < 3; i++ {
 		var target NodeID
 		crand.Read(target[:])
+		// lookup函数是最kad网最核心函数,查询离target最近一批节点
 		tab.lookup(target, false)
 	}
 }
 
 func (tab *Table) loadSeedNodes(bond bool) {
+	// 如果没找到,则从本地节点数据库加载预配置的种子节点到对应K桶
 	seeds := tab.db.querySeeds(seedCount, seedMaxAge)
 	seeds = append(seeds, tab.nursery...)
 	if bond {
@@ -533,14 +543,16 @@ func (tab *Table) copyBondedNodes() {
 
 // closest returns the n nodes in the table that are closest to the
 // given id. The caller must hold tab.mutex.
+// 查询离target最近一批节点,距离计算即对kad网络XOR(异或)距离计算的实现
 func (tab *Table) closest(target common.Hash, nresults int) *nodesByDistance {
 	// This is a very wasteful way to find the closest nodes but
 	// obviously correct. I believe that tree-based buckets would make
 	// this easier to implement efficiently.
+	// 遍历本地路由节点表
 	close := &nodesByDistance{target: target}
-	for _, b := range tab.buckets {
-		for _, n := range b.entries {
-			close.push(n, nresults)
+	for _, b := range tab.buckets {  //这里是每一个K桶
+		for _, n := range b.entries { //entries是节点数组，n就是一个node
+			close.push(n, nresults)  //close.push最终调用distcmp进行异或计算
 		}
 	}
 	return close
@@ -846,18 +858,24 @@ type nodesByDistance struct {
 
 // push adds the given node to the list, keeping the total size below maxElems.
 func (h *nodesByDistance) push(n *Node, maxElems int) {
+	//sort包下面的Search函数采用二分法搜索找到[0, n)区间内最小的满足f(i)==true的值i
+	// 如果没有该值，函数会返回n。
 	ix := sort.Search(len(h.entries), func(i int) bool {
+		// distcmp(target,a,b common.Hash)int
+		// 比较a，b与target之间的距离谁更近，a更近的话返会-1，b更近的话返会1
 		return distcmp(h.target, h.entries[i].sha, n.sha) > 0
 	})
 	if len(h.entries) < maxElems {
 		h.entries = append(h.entries, n)
 	}
+	//h.entries[0]-h.entries[n]（不包含）区间的节点，到目标节点的距离都比n节点要小
 	if ix == len(h.entries) {
 		// farther away than all nodes we already have.
 		// if there was room for it, the node is now the last element.
 	} else {
 		// slide existing entries down to make room
 		// this will overwrite the entry we just appended.
+		//如果n节点到目标节点的距离比其中的一个节点小，则把n节点添加套h.entries中
 		copy(h.entries[ix+1:], h.entries[ix:])
 		h.entries[ix] = n
 	}

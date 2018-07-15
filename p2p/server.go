@@ -425,6 +425,7 @@ func (srv *Server) Start() (err error) {
 		if err != nil {
 			return err
 		}
+
 		conn, err = net.ListenUDP("udp", addr)
 		if err != nil {
 			return err
@@ -432,6 +433,7 @@ func (srv *Server) Start() (err error) {
 		realaddr = conn.LocalAddr().(*net.UDPAddr)
 		if srv.NAT != nil {
 			if !realaddr.IP.IsLoopback() {
+				// 进行内网网端口映射
 				go nat.Map(srv.NAT, srv.quit, "udp", realaddr.Port, realaddr.Port, "ethereum discovery")
 			}
 			// TODO: react to external IP changes over time.
@@ -491,6 +493,7 @@ func (srv *Server) Start() (err error) {
 		srv.ourHandshake.Caps = append(srv.ourHandshake.Caps, p.cap())
 	}
 	// listen/dial
+	//调用srv.startListening()在传入的ip地址监听tcp连接:
 	if srv.ListenAddr != "" {
 		if err := srv.startListening(); err != nil {
 			return err
@@ -505,7 +508,7 @@ func (srv *Server) Start() (err error) {
 	srv.running = true
 	return nil
 }
-
+// 在给定的ip地址监听tcp的连接
 func (srv *Server) startListening() error {
 	// Launch the TCP listener.
 	listener, err := net.Listen("tcp", srv.ListenAddr)
